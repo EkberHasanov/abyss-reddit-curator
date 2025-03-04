@@ -7,11 +7,12 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 class ContentGenerationError(Exception):
-    """Custom exception for content generation errors."""
+
     pass
 
+
 def generate_content(text: str) -> str:
-    """Generate content using Gemini API."""
+
     try:
         response = client.models.generate_content(  # type: ignore
             contents=text,
@@ -25,8 +26,9 @@ def generate_content(text: str) -> str:
     except Exception as e:
         raise ContentGenerationError(f"Error generating content: {str(e)}")
 
+
 def get_content_type_prompt(content_type: str) -> str:
-    """Get specific prompt instructions based on content type."""
+
     content_type_prompts = {
         "youtube_script": """
             Create a YouTube script with:
@@ -75,8 +77,9 @@ def get_content_type_prompt(content_type: str) -> str:
     
     return content_type_prompts.get(content_type.lower().replace(" ", "_"), default_prompt)
 
+
 def get_tone_prompt(tone: str) -> str:
-    """Get specific prompt instructions based on tone."""
+
     tone_prompts = {
         "informative": "Maintain an objective, educational tone. Focus on facts and clear explanations.",
         "humorous": "Use wit, jokes, and playful language. Keep the content light-hearted and entertaining.",
@@ -89,8 +92,9 @@ def get_tone_prompt(tone: str) -> str:
     
     return tone_prompts.get(tone.lower(), default_prompt)
 
+
 def get_length_guidance(length: str) -> str:
-    """Get specific length guidance based on length preference."""
+
     length_guidance = {
         "short": "Keep the content concise and to-the-point. Aim for about 250-300 words.",
         "medium": "Provide moderate detail. Aim for about 500-700 words.",
@@ -101,40 +105,41 @@ def get_length_guidance(length: str) -> str:
     
     return length_guidance.get(length.lower(), default_guidance)
 
-def transform_reddit_posts(posts: List[Dict[str, Any]], subreddit_info: Dict[str, Any], 
+def transform_topic_content(articles: List[Dict[str, Any]], topic_info: Dict[str, Any], 
                         content_type: str, tone: str, length: str) -> str:
-    """
-    Transform Reddit posts into specified content type with given tone and length.
-    
-    Args:
-        posts: List of Reddit post data
-        subreddit_info: Information about the subreddit
-        content_type: Type of content to generate
-        tone: Tone of the content
-        length: Length of the content
-        
-    Returns:
-        Transformed content as a string
-    """
+
     try:
         content_type_instructions = get_content_type_prompt(content_type)
         tone_instructions = get_tone_prompt(tone)
         length_instructions = get_length_guidance(length)
         
-        posts_summary = "\n\n".join([
-            f"Post {i+1}:\nTitle: {post['title']}\nUpvotes: {post['score']}\nComments: {post['num_comments']}\n"
-            f"Content: {post['selftext'][:300]}{'...' if len(post['selftext']) > 300 else ''}"
-            for i, post in enumerate(posts)
-        ])
+        main_article = articles[0] if articles else {}
+        main_content = main_article.get("content", "")
+        main_title = main_article.get("title", "")
+        categories = main_article.get("categories", [])
+        
+        related_articles_content = ""
+        related_articles = main_article.get("related_articles", [])
+        
+        if related_articles:
+            related_articles_content = "\n\n## Related Topics\n"
+            for i, article in enumerate(related_articles):
+                related_articles_content += f"\n### {i+1}. {article.get('title', '')}\n"
+                related_articles_content += f"{article.get('content', '')[:300]}...\n"
+        
+        additional_articles_content = ""
+        if len(articles) > 1:
+            additional_articles_content = "\n\n## Additional Information\n"
+            for i, article in enumerate(articles[1:]):
+                additional_articles_content += f"\n### {i+1}. {article.get('title', '')}\n"
+                additional_articles_content += f"{article.get('content', '')[:300]}...\n"
         
         prompt = f"""
-        # Task: Transform Reddit Content
+        # Task: Transform Wikipedia Content into {content_type}
 
-        ## Subreddit Information
-        - Name: r/{subreddit_info['name']}
-        - Title: {subreddit_info['title']}
-        - Description: {subreddit_info['description']}
-        - Subscribers: {subreddit_info['subscribers']}
+        ## Topic Information
+        - Main Topic: {topic_info['topic']}
+        - Main Article: {main_title}
 
         ## Content Requirements
         - Content Type: {content_type}
@@ -146,15 +151,24 @@ def transform_reddit_posts(posts: List[Dict[str, Any]], subreddit_info: Dict[str
         - Length: {length}
         {length_instructions}
 
-        ## Reddit Posts to Transform
-        {posts_summary}
+        ## Main Content
+        {main_content}
+
+        {related_articles_content}
+        
+        {additional_articles_content}
+
+        ## Content Categories
+        {', '.join(categories)}
 
         ## Instructions
-        1. Create a {content_type} based on these Reddit posts from r/{subreddit_info['name']}
+        1. Create a {content_type} about "{topic_info['topic']}" using the provided information
         2. Maintain a {tone} tone throughout
-        3. Reference multiple posts to create comprehensive content
-        4. Format the content appropriately for the chosen content type
-        5. Make the content engaging and valuable to the audience
+        3. Format the content appropriately for the chosen content type
+        4. Make the content engaging, accurate, and valuable to the audience
+        5. Do not mention that this information comes from Wikipedia
+        6. Focus on providing value and insights about the topic
+        7. Use facts from the provided content but write in your own words
         """
         
         result = generate_content(prompt)
@@ -163,4 +177,4 @@ def transform_reddit_posts(posts: List[Dict[str, Any]], subreddit_info: Dict[str
     except ContentGenerationError:
         raise
     except Exception as e:
-        raise ContentGenerationError(f"Error transforming Reddit posts: {str(e)}")
+        raise ContentGenerationError(f"Error transforming topic content: {str(e)}")

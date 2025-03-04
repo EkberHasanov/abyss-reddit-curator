@@ -1,17 +1,19 @@
 import os
 import json
 import time
-from typing import Dict
-from reddit_scraper import get_subreddit_top_posts, RedditScraperError
-from service import transform_reddit_posts, ContentGenerationError
+from typing import Any, Dict
+from topic_fetcher import get_topic_content, ContentFetcherError
+from service import transform_topic_content, ContentGenerationError
+
 
 def create_output_folder():
-    """Create output folder if it doesn't exist."""
+
     if not os.path.exists('output'):
         os.makedirs('output')
 
+
 def write_output_file(filename: str, content: str):
-    """Write content to a file in the output folder."""
+
     with open(os.path.join('output', filename), 'w', encoding='utf-8') as f:
         f.write(content)
 
@@ -19,63 +21,70 @@ def main():
     create_output_folder()
     start_time = time.time()
     
-    subreddit = os.environ.get('subreddit', '')
+    topic = os.environ.get('topic', '').strip()
     content_type = os.environ.get('content_type', 'blog_post')
     tone = os.environ.get('tone', 'informative')
     length = os.environ.get('length', 'medium')
-    post_limit = int(os.environ.get('post_limit', '5'))
-    time_filter = os.environ.get('time_filter', 'day')
-    
-    if not subreddit:
-        error_message = "Error: Subreddit name is required."
-        write_output_file('error.txt', error_message)
+    num_articles = int(os.environ.get('num_articles', '3'))
+
+    if not topic:
+        write_output_file('error.txt', "Error: Topic is required.")
         return
     
     try:
-        posts, subreddit_info = get_subreddit_top_posts(subreddit, limit=post_limit, time_filter=time_filter)
+        write_output_file('status.txt', f"⏳ Researching information about '{topic}'...")
         
-        transformed_content = transform_reddit_posts(posts, subreddit_info, content_type, tone, length)
+        articles, topic_info = get_topic_content(topic, num_articles=num_articles)
         
-        write_output_file('transformed_content.txt', transformed_content)
+        write_output_file('status.txt', f"✅ Found {len(articles)} articles about '{topic}'!\n⏳ Now transforming into {tone} {content_type}...")
         
-        metadata: Dict[str, str | int | float | Dict[str, str]] = {
-            "subreddit": subreddit,
+        transformed_content = transform_topic_content(articles, topic_info, content_type, tone, length)
+        
+        write_output_file('transformed_content.html', transformed_content)
+        
+        metadata: Dict[str, Any] = {
+            "topic": topic,
             "content_type": content_type,
             "tone": tone,
             "length": length,
-            "posts_analyzed": len(posts),
-            "time_filter": time_filter,
-            "subreddit_info": subreddit_info,
+            "articles_analyzed": len(articles),
+            "main_article": articles[0]["title"] if articles else "",
+            "main_article_url": articles[0]["url"] if articles else "",
             "generation_time_seconds": round(time.time() - start_time, 2)
         }
         write_output_file('metadata.json', json.dumps(metadata, indent=2))
         
         summary = f"""
-        # Reddit Content Curator - Summary
+        # 🎉 Your Content is Ready!
         
-        ## Content Successfully Generated!
+        ## ✨ Content Successfully Generated
         
-        Your content has been transformed from r/{subreddit} into a {tone} {content_type}.
+        We've created {tone} {content_type} about "{topic}".
         
-        ## Details:
-        - Subreddit: r/{subreddit} ({subreddit_info['subscribers']} subscribers)
+        ## 📊 Details:
+        - Topic: {topic}
         - Content Type: {content_type}
         - Tone: {tone}
         - Length: {length}
-        - Posts Analyzed: {len(posts)}
-        - Time Range: {time_filter}
+        - Articles Analyzed: {len(articles)}
+        - Main Source: {articles[0]["title"] if articles else ""}
         - Processing Time: {round(time.time() - start_time, 2)} seconds
         
-        ## Files Generated:
+        ## 📄 Files Generated:
         - transformed_content.txt: Your main content
         - metadata.json: Details about the generation process
         
-        Thank you for using the Reddit Content Curator!
+        ## 🚀 Next Steps:
+        1. Copy your content from transformed_content.txt
+        2. Use it on your preferred platform
+        3. Enjoy the engagement from your audience!
+        
+        Thank you for using the Content Alchemist!
         """
         write_output_file('summary.txt', summary)
         
-    except RedditScraperError as e:
-        error_message = f"Reddit Error: {str(e)}\n\nPlease check the subreddit name and try again."
+    except ContentFetcherError as e:
+        error_message = f"Research Error: {str(e)}\n\nPlease try a different topic or check your spelling."
         write_output_file('error.txt', error_message)
     
     except ContentGenerationError as e:
